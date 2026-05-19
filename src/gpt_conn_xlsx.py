@@ -3,8 +3,10 @@ import json
 from openai import OpenAI
 import os
 from datetime import datetime
+from pathlib import Path
 
-XLSX_PATH = "Для_тестов_ЛЛМ1__3__Асель__1_.xlsx"
+BASE_DIR = Path(__file__).resolve().parent.parent
+XLSX_PATH = BASE_DIR / "datasets" / "Для_тестов_ЛЛМ1__3__Асель__1_.xlsx"
 
 API_KEY = "sk-QwR2Iapnq6ph70c6jM9rpfQsxdzGMhZG"
 
@@ -558,7 +560,9 @@ if __name__ == "__main__":
 
     # Сохраняем результаты
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = f"results_{timestamp}.json"
+    RESULTS_DIR = BASE_DIR / "results"
+    RESULTS_DIR.mkdir(exist_ok=True)
+    output_path = RESULTS_DIR / f"results_{timestamp}.json"
 
     save_data = {
         "timestamp": timestamp,
