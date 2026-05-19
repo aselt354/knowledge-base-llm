@@ -2,5 +2,4 @@ openai
 pandas
 openpyxl
 matplotlib
-json
 datetime
