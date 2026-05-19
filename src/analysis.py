@@ -22,7 +22,7 @@ def get_latest_json():
 
 def plot_all(json_filename=None):
 
-    # ✔️ если ничего не передали — берём последний файл
+    # если ничего не передали — берём последний файл
     if json_filename is None:
         json_path = get_latest_json()
     else:
