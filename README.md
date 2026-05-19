@@ -33,6 +33,7 @@ knowledge-base-llm/
 │   ├── results_*.json     # результаты запусков
 │   ├── graph1_by_category.png
 │   └── graph2_directions.png
+|   └── text_log.txt
 ├── docs/
 │   └── pipeline.png       # схема пайплайна
 └── requirements.txt
