@@ -2,6 +2,7 @@ import pandas as pd
 import json
 from openai import OpenAI
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -163,6 +164,26 @@ SYSTEM_REFINE_NEG = """Ты — опытный врач и клинически�
 
 Только JSON, без лишнего текста.
 """
+
+# =============================================================================
+# TEE — дублирование вывода в файл
+# =============================================================================
+
+class Tee:
+    """Дублирует stdout одновременно в консоль и в файл."""
+    def __init__(self, *files):
+        self.files = files
+
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
+
 # =============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # =============================================================================
@@ -372,14 +393,12 @@ def test_dataset(dataset: list, category_name: str):
     print(f"ТЕСТИРУЕМ: {category_name} ({len(dataset)} пар)")
     print('='*60)
 
-    # счётчики для прямого направления
     step1_correct = 0
     step1_wrong = 0
     step2_correct = 0
     step2_wrong = 0
     step2_skipped = 0
 
-    # счётчики для обратного направления
     rev_step1_correct = 0
     rev_step1_wrong = 0
     rev_step2_correct = 0
@@ -406,7 +425,6 @@ def test_dataset(dataset: list, category_name: str):
             predicted_type = result["link_type"]
             predicted_refine = result["direction_1_to_2"]
 
-            # --- Оценка шага 1 (прямое) ---
             if predicted_type == expected_type:
                 step1_correct += 1
                 print(f"  Шаг 1 ✓ тип: {predicted_type}")
@@ -414,7 +432,6 @@ def test_dataset(dataset: list, category_name: str):
                 step1_wrong += 1
                 print(f"  Шаг 1 ✗ тип: ожидалось={expected_type}, получено={predicted_type}")
 
-            # --- Оценка шага 2 (прямое) ---
             if predicted_type == expected_type:
                 if predicted_refine == expected_refine:
                     step2_correct += 1
@@ -426,7 +443,6 @@ def test_dataset(dataset: list, category_name: str):
                 step2_skipped += 1
                 print(f"  Шаг 2 — пропущен (шаг 1 неверный)")
 
-            # --- Обратное направление ---
             if reverse_label is not None and reverse_label in {
                 "всегда наблюдается", "может наблюдаться",
                 "всегда отсутствует", "может отсутствовать"
@@ -435,7 +451,7 @@ def test_dataset(dataset: list, category_name: str):
                 print(f"\n  [Обратное: {e2} -> {e1}]")
                 print(f"  Ожидается: тип={rev_expected_type}, уточнение={rev_expected_refine}")
 
-                rev_predicted_type = result["link_type"]  # тип симметричен
+                rev_predicted_type = result["link_type"]
                 rev_predicted_refine = result["direction_2_to_1"]
 
                 if rev_predicted_type == rev_expected_type:
@@ -476,7 +492,6 @@ def test_dataset(dataset: list, category_name: str):
             errors += 1
             print(f"  ! ОШИБКА: {e}")
 
-    # --- Итог по категории ---
     total_step1 = step1_correct + step1_wrong
     total_step2 = step2_correct + step2_wrong
     acc_step1 = step1_correct / total_step1 * 100 if total_step1 > 0 else 0
@@ -517,77 +532,92 @@ def test_dataset(dataset: list, category_name: str):
 # =============================================================================
 
 if __name__ == "__main__":
-    N_PER_CATEGORY = 5
+    N_PER_CATEGORY = 1
 
-    datasets = load_and_split_dataset(XLSX_PATH)
-
-    totals = {
-        "step1_correct": 0, "step1_wrong": 0,
-        "step2_correct": 0, "step2_wrong": 0,
-        "step2_skipped": 0,
-        "rev_step1_correct": 0, "rev_step1_wrong": 0,
-        "rev_step2_correct": 0, "rev_step2_wrong": 0,
-        "rev_step2_skipped": 0,
-        "errors": 0,
-    }
-
-    all_stats = []
-    for cat_name, ds in datasets.items():
-        subset = ds[:N_PER_CATEGORY]
-        stats = test_dataset(subset, cat_name)
-        all_stats.append(stats)
-        for k in totals:
-            if k != "pairs":
-                totals[k] += stats[k]
-
-    t1 = totals["step1_correct"] + totals["step1_wrong"]
-    t2 = totals["step2_correct"] + totals["step2_wrong"]
-    rt1 = totals["rev_step1_correct"] + totals["rev_step1_wrong"]
-    rt2 = totals["rev_step2_correct"] + totals["rev_step2_wrong"]
-
-    print("\n" + "="*60)
-    print("ОБЩАЯ СТАТИСТИКА")
-    print("="*60)
-    print(f"ПРЯМОЕ НАПРАВЛЕНИЕ:")
-    print(f"  Шаг 1 (тип связи):  {totals['step1_correct']}/{t1} = {totals['step1_correct']/t1*100:.1f}%" if t1 else "  Шаг 1: нет данных")
-    print(f"  Шаг 2 (уточнение):  {totals['step2_correct']}/{t2} = {totals['step2_correct']/t2*100:.1f}%" if t2 else "  Шаг 2: нет данных")
-    print(f"  Шаг 2 пропущен: {totals['step2_skipped']}")
-    print(f"ОБРАТНОЕ НАПРАВЛЕНИЕ:")
-    print(f"  Шаг 1 (тип связи):  {totals['rev_step1_correct']}/{rt1} = {totals['rev_step1_correct']/rt1*100:.1f}%" if rt1 else "  Шаг 1: нет данных")
-    print(f"  Шаг 2 (уточнение):  {totals['rev_step2_correct']}/{rt2} = {totals['rev_step2_correct']/rt2*100:.1f}%" if rt2 else "  Шаг 2: нет данных")
-    print(f"  Шаг 2 пропущен: {totals['rev_step2_skipped']}")
-    print(f"Ошибок API: {totals['errors']}")
-
-    # Сохраняем результаты
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # --- Подготовка папки results и путей ---
     RESULTS_DIR = BASE_DIR / "results"
     RESULTS_DIR.mkdir(exist_ok=True)
-    output_path = RESULTS_DIR / f"results_{timestamp}.json"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    save_data = {
-        "timestamp": timestamp,
-        "n_per_category": N_PER_CATEGORY,
-        "totals": {
-            "step1_correct": totals["step1_correct"],
-            "step1_total": t1,
-            "step1_acc": round(totals["step1_correct"] / t1 * 100, 1) if t1 else 0,
-            "step2_correct": totals["step2_correct"],
-            "step2_total": t2,
-            "step2_acc": round(totals["step2_correct"] / t2 * 100, 1) if t2 else 0,
-        },
-        "by_category": {}
-    }
+    log_path = RESULTS_DIR / f"text_log_{timestamp}.txt"
 
-    for cat_name, stats in zip(datasets.keys(), all_stats):
-        t1_cat = stats["step1_correct"] + stats["step1_wrong"]
-        t2_cat = stats["step2_correct"] + stats["step2_wrong"]
-        save_data["by_category"][cat_name] = {
-            "step1_acc": round(stats["step1_correct"] / t1_cat * 100, 1) if t1_cat else 0,
-            "step2_acc": round(stats["step2_correct"] / t2_cat * 100, 1) if t2_cat else 0,
-            "pairs": stats["pairs"],
+    # --- Запускаем Tee: всё что идёт в print() пишется и в консоль, и в файл ---
+    log_file = open(log_path, "w", encoding="utf-8")
+    sys.stdout = Tee(sys.__stdout__, log_file)
+
+    try:
+        datasets = load_and_split_dataset(XLSX_PATH)
+
+        totals = {
+            "step1_correct": 0, "step1_wrong": 0,
+            "step2_correct": 0, "step2_wrong": 0,
+            "step2_skipped": 0,
+            "rev_step1_correct": 0, "rev_step1_wrong": 0,
+            "rev_step2_correct": 0, "rev_step2_wrong": 0,
+            "rev_step2_skipped": 0,
+            "errors": 0,
         }
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(save_data, f, ensure_ascii=False, indent=2)
+        all_stats = []
+        for cat_name, ds in datasets.items():
+            subset = ds[:N_PER_CATEGORY]
+            stats = test_dataset(subset, cat_name)
+            all_stats.append(stats)
+            for k in totals:
+                if k != "pairs":
+                    totals[k] += stats[k]
 
-    print(f"\nРезультаты сохранены в {output_path}")
+        t1 = totals["step1_correct"] + totals["step1_wrong"]
+        t2 = totals["step2_correct"] + totals["step2_wrong"]
+        rt1 = totals["rev_step1_correct"] + totals["rev_step1_wrong"]
+        rt2 = totals["rev_step2_correct"] + totals["rev_step2_wrong"]
+
+        print("\n" + "="*60)
+        print("ОБЩАЯ СТАТИСТИКА")
+        print("="*60)
+        print(f"ПРЯМОЕ НАПРАВЛЕНИЕ:")
+        print(f"  Шаг 1 (тип связи):  {totals['step1_correct']}/{t1} = {totals['step1_correct']/t1*100:.1f}%" if t1 else "  Шаг 1: нет данных")
+        print(f"  Шаг 2 (уточнение):  {totals['step2_correct']}/{t2} = {totals['step2_correct']/t2*100:.1f}%" if t2 else "  Шаг 2: нет данных")
+        print(f"  Шаг 2 пропущен: {totals['step2_skipped']}")
+        print(f"ОБРАТНОЕ НАПРАВЛЕНИЕ:")
+        print(f"  Шаг 1 (тип связи):  {totals['rev_step1_correct']}/{rt1} = {totals['rev_step1_correct']/rt1*100:.1f}%" if rt1 else "  Шаг 1: нет данных")
+        print(f"  Шаг 2 (уточнение):  {totals['rev_step2_correct']}/{rt2} = {totals['rev_step2_correct']/rt2*100:.1f}%" if rt2 else "  Шаг 2: нет данных")
+        print(f"  Шаг 2 пропущен: {totals['rev_step2_skipped']}")
+        print(f"Ошибок API: {totals['errors']}")
+
+        # --- Сохраняем JSON с результатами ---
+        output_path = RESULTS_DIR / f"results_{timestamp}.json"
+
+        save_data = {
+            "timestamp": timestamp,
+            "n_per_category": N_PER_CATEGORY,
+            "totals": {
+                "step1_correct": totals["step1_correct"],
+                "step1_total": t1,
+                "step1_acc": round(totals["step1_correct"] / t1 * 100, 1) if t1 else 0,
+                "step2_correct": totals["step2_correct"],
+                "step2_total": t2,
+                "step2_acc": round(totals["step2_correct"] / t2 * 100, 1) if t2 else 0,
+            },
+            "by_category": {}
+        }
+
+        for cat_name, stats in zip(datasets.keys(), all_stats):
+            t1_cat = stats["step1_correct"] + stats["step1_wrong"]
+            t2_cat = stats["step2_correct"] + stats["step2_wrong"]
+            save_data["by_category"][cat_name] = {
+                "step1_acc": round(stats["step1_correct"] / t1_cat * 100, 1) if t1_cat else 0,
+                "step2_acc": round(stats["step2_correct"] / t2_cat * 100, 1) if t2_cat else 0,
+                "pairs": stats["pairs"],
+            }
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(save_data, f, ensure_ascii=False, indent=2)
+
+        print(f"\nРезультаты сохранены в {output_path}")
+        print(f"Лог сохранён в {log_path}")
+
+    finally:
+        # Восстанавливаем оригинальный stdout и закрываем файл
+        sys.stdout = sys.__stdout__
+        log_file.close()
