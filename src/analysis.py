@@ -2,10 +2,18 @@ import matplotlib.pyplot as plt
 import matplotlib
 import json
 import numpy as np
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+RESULTS_DIR = BASE_DIR / "results"
+RESULTS_DIR.mkdir(exist_ok=True)
 
 matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 
-def plot_all(json_path="results_20260519_041147.json"):
+def plot_all(json_filename="results_20260519_041147.json"):
+    json_path = RESULTS_DIR / json_filename
+
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -70,7 +78,8 @@ def plot_all(json_path="results_20260519_041147.json"):
     ax.spines['right'].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig("graph1_by_category.png", dpi=150, bbox_inches='tight')
+    graph1_path = RESULTS_DIR / "graph1_by_category.png"
+    plt.savefig(graph1_path, dpi=150, bbox_inches='tight')
     plt.show()
     print("Сохранён: graph1_by_category.png")
 
@@ -121,7 +130,8 @@ def plot_all(json_path="results_20260519_041147.json"):
     ax2.spines['right'].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig("graph2_directions.png", dpi=150, bbox_inches='tight')
+    graph2_path = RESULTS_DIR / "graph2_directions.png"
+    plt.savefig(graph2_path, dpi=150, bbox_inches='tight')
     plt.show()
     print("Сохранён: graph2_directions.png")
 
